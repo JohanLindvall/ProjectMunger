@@ -2,6 +2,8 @@
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 
 namespace ProjectMunger
 {
@@ -9,6 +11,57 @@ namespace ProjectMunger
     {
         static void Main(string[] args)
         {
+        }
+
+        private static void RenameProject(string slnPath, string projectPath, string newName)
+        {
+            var oldName = Path.GetFileName(projectPath);
+
+            var slnData = File.ReadAllText(slnPath);
+            var newData = slnData.Replace(oldName, newName);
+            File.WriteAllText(slnPath, newData);
+            var dest = Path.Combine(Path.GetDirectoryName(projectPath), newName);
+            GitMv(projectPath, dest);
+
+            foreach (var fi in Directory.GetFiles(dest, "*", SearchOption.AllDirectories))
+            {
+                var actualFile = Path.Combine(Path.GetDirectoryName(fi), fi.Replace(Path.GetFileName(projectPath), newName));
+                if (!string.Equals(actualFile, fi, StringComparison.OrdinalIgnoreCase))
+                {
+                    GitMv(fi, actualFile);
+                }
+
+                var data = File.ReadAllText(actualFile);
+                newData = data.Replace(Path.GetFileName(projectPath), newName);
+                if (!string.Equals(data, newData))
+                {
+                    File.WriteAllText(actualFile, newData);
+                }
+            }
+        }
+
+        private static void GitMv(string source, string destination)
+        {
+            var s = Path.GetFullPath(source).Split('\\');
+            var d = Path.GetFullPath(destination).Split('\\');
+            int i;
+            var end = Math.Min(s.Length, d.Length);
+            for (i = 0; i < end; ++i)
+            {
+                if (!string.Equals(s[i], d[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+            }
+
+            var workDir = string.Join("\\", s.Take(i).ToArray());
+            source = string.Join("\\", s.Skip(i).ToArray());
+            destination = string.Join("\\", d.Skip(i).ToArray());
+
+            var process = new Process { StartInfo = new ProcessStartInfo { WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = workDir, FileName = "git.exe", Arguments = $"mv \"{source}\" \"{destination}\"" } };
+            process.Start();
+            process.WaitForExit();
+
         }
 
         private static void FixupDocumentationPath(string path)
